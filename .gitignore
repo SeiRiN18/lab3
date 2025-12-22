@@ -1,0 +1,16 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE configs
+.idea/
+**/.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Ignore compiled/temporary files globally
+*.tmp
+*.temp
+*.swp
