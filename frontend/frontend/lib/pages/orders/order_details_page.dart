@@ -22,12 +22,24 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   Map? car;
   Map? client;
   List services = [];
+  List availableServices = [];
   final Map<int, Map> serviceCache = {};
+  final TextEditingController quantityController = TextEditingController(
+    text: "1",
+  );
+  int? selectedServiceId;
+  bool addingService = false;
 
   @override
   void initState() {
     super.initState();
     loadAll();
+  }
+
+  @override
+  void dispose() {
+    quantityController.dispose();
+    super.dispose();
   }
 
   Future<void> loadAll() async {
@@ -36,6 +48,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     await loadCar();
     await loadClient();
     await loadServices();
+    await loadAvailableServices();
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -70,6 +84,15 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     } catch (_) {}
   }
 
+  Future<void> loadAvailableServices() async {
+    try {
+      availableServices = await ServicesApi.getAll();
+      if (selectedServiceId == null && availableServices.isNotEmpty) {
+        selectedServiceId = availableServices.first['service_id'];
+      }
+    } catch (_) {}
+  }
+
   Future<Map?> loadService(int id) async {
     if (serviceCache.containsKey(id)) return serviceCache[id];
     try {
@@ -78,6 +101,49 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       return data;
     } catch (_) {}
     return null;
+  }
+
+  Future<void> addServiceToOrder() async {
+    if (selectedServiceId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Select a service")));
+      return;
+    }
+
+    final quantity = int.tryParse(quantityController.text.trim());
+    if (quantity == null || quantity <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Enter a valid quantity")));
+      return;
+    }
+
+    setState(() => addingService = true);
+
+    String message = "Failed to add service";
+    try {
+      await OrderServicesApi.create({
+        "order_id": widget.orderId,
+        "service_id": selectedServiceId,
+        "quantity": quantity,
+      });
+      await loadServices();
+      if (!mounted) return;
+      setState(() => addingService = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Service added")));
+      return;
+    } catch (e) {
+      message = e.toString();
+    }
+
+    if (!mounted) return;
+    setState(() => addingService = false);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -185,6 +251,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           children: [
             const SectionTitle("Services"),
             const SizedBox(height: 8),
+            _addServiceForm(),
+            const SizedBox(height: 12),
             if (services.isEmpty) const Text("No services"),
             for (final s in services)
               FutureBuilder(
@@ -199,9 +267,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          "OrderService ID: ${s['order_services_id']}",
-                        ),
+                        Text("OrderService ID: ${s['order_services_id']}"),
                         Text("Service ID: ${s['service_id']}"),
                         Text("Quantity: ${s['quantity']}"),
                         Text("Unit price: ${s['unit_price']}"),
@@ -222,6 +288,47 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _addServiceForm() {
+    if (availableServices.isEmpty) {
+      return const Text("No available services to add");
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Add service to this order",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int>(
+          value: selectedServiceId,
+          decoration: const InputDecoration(labelText: "Service"),
+          items: availableServices
+              .map<DropdownMenuItem<int>>(
+                (s) => DropdownMenuItem(
+                  value: s['service_id'],
+                  child: Text("${s['name']} (${s['price']})"),
+                ),
+              )
+              .toList(),
+          onChanged: (v) => setState(() => selectedServiceId = v),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: quantityController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: "Quantity"),
+        ),
+        const SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: addingService ? null : addServiceToOrder,
+          child: Text(addingService ? "Adding..." : "Add service"),
+        ),
+      ],
     );
   }
 }
